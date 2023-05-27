@@ -8,6 +8,8 @@
     <color name="white">#FFFFFF</color>
     <color name="colorBannerBackground">#FF0000</color>
     <color name="colorBannerText">#FFFFFF</color>
+    <color name="gray">#808080</color>
+
 
     <!-- Define other colors if needed -->
 </resources>

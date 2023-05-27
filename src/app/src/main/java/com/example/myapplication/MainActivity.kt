@@ -4,6 +4,9 @@ import android.Manifest
 import android.content.Context
 import android.content.DialogInterface
 import android.content.pm.PackageManager
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -19,17 +22,29 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import android.widget.Button
 import android.widget.TextView
+import android.view.LayoutInflater
 import android.view.View
+import android.view.ViewGroup
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import android.os.BatteryManager
+
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var connectivityManager: ConnectivityManager
     private lateinit var networkCallback: ConnectivityManager.NetworkCallback
     private lateinit var telephonyManager: TelephonyManager
+    private lateinit var locationManager: LocationManager
+    private lateinit var locationListener: LocationListener
     private val handler = Handler()
     private val networkCheckIntervalMs = 10000L
     private var isCheckingNetworkStatus = false
     private lateinit var statusTextView: TextView
+    private lateinit var dangerAlertView: View
+    private lateinit var dangerAlert: AlertDialog
+    private lateinit var logTextView: TextView
 
     private fun initializeNetworkCallback() {
         networkCallback = object : ConnectivityManager.NetworkCallback() {
@@ -48,6 +63,7 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val PERMISSION_REQUEST_READ_PHONE_STATE = 1
+        private const val PERMISSION_REQUEST_LOCATION = 2
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -56,6 +72,7 @@ class MainActivity : AppCompatActivity() {
 
         connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         telephonyManager = getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
+        locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
 
         // Check and request the READ_PHONE_STATE permission if not granted
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
@@ -73,9 +90,26 @@ class MainActivity : AppCompatActivity() {
             initializeNetworkCallback()
         }
 
+        // Check and request the ACCESS_FINE_LOCATION permission if not granted
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
+                PERMISSION_REQUEST_LOCATION
+            )
+        } else {
+            initializeLocationListener()
+        }
+
         val startButton: Button = findViewById(R.id.startButton)
         val stopButton: Button = findViewById(R.id.stopButton)
         statusTextView = findViewById(R.id.statusTextView)
+        logTextView = findViewById(R.id.logTextView)
 
         // Set the initial message as "Not Checking Network Status"
         statusTextView.apply {
@@ -91,6 +125,20 @@ class MainActivity : AppCompatActivity() {
         stopButton.setOnClickListener {
             stopCheckingNetworkStatus()
         }
+
+        // Inflate the custom danger alert layout
+        dangerAlertView = layoutInflater.inflate(R.layout.danger_alert_layout, null)
+        dangerAlert = AlertDialog.Builder(this)
+            .setTitle("Warning!")
+            .setView(dangerAlertView)
+            .setPositiveButton("OK", null)
+            .create()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        dangerAlert.dismiss() // Dismiss the danger alert dialog when the activity is destroyed
+        locationManager.removeUpdates(locationListener) // Stop receiving location updates
     }
 
     private fun startCheckingNetworkStatus() {
@@ -117,7 +165,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-
     private val networkCheckRunnable = object : Runnable {
         override fun run() {
             if (!isCheckingNetworkStatus) {
@@ -139,10 +186,19 @@ class MainActivity : AppCompatActivity() {
                 networkCapabilities?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true -> {
                     val networkType = telephonyManager.networkType
                     val mobileNetworkType = getMobileNetworkType(networkType)
-                    Log.d("Network", "Connected to Mobile Data: $mobileNetworkType")
+                    val signalStrength = getSignalStrength()
+                    val batteryStatus = getBatteryStatus()
+                    Log.d(
+                        "Network",
+                        "Connected to Mobile Data: $mobileNetworkType, Signal Strength: $signalStrength, Battery Status: $batteryStatus"
+                    )
 
                     if (mobileNetworkType == "2G" || mobileNetworkType == "3G") {
-                        showDangerAlert()
+                        val currentDateTime = getCurrentDateTime()
+                        val location = getLastKnownLocation()
+                        val logMessage =
+                            "$currentDateTime - Warning: Dangerous network detected! Location: $location, Signal Strength: $signalStrength, Battery Status: $batteryStatus"
+                        appendToLog(logMessage)
                     }
                 }
                 else -> {
@@ -152,6 +208,77 @@ class MainActivity : AppCompatActivity() {
         } else {
             Log.d("Network", "Not Connected")
         }
+    }
+
+    private fun getBatteryStatus(): String {
+        val batteryStatus = getSystemService(Context.BATTERY_SERVICE) as BatteryManager
+        val batteryPercentage = batteryStatus.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+        return "$batteryPercentage%"
+    }
+
+    private fun getSignalStrength(): String {
+        val signalStrength = telephonyManager.signalStrength
+        return if (signalStrength != null) {
+            when (signalStrength.level) {
+                0 -> "None"
+                1 -> "Poor"
+                2 -> "Moderate"
+                3 -> "Good"
+                else -> "Excellent"
+            }
+        } else {
+            "Unknown"
+        }
+    }
+
+    private fun getLastKnownLocation(): String {
+        var locationString = "Unknown"
+        if (ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
+            val location = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+            location?.let {
+                val latitude = location.latitude
+                val longitude = location.longitude
+                locationString = "Lat: $latitude, Long: $longitude"
+            }
+        }
+        return locationString
+    }
+
+    private fun initializeLocationListener() {
+        locationListener = object : LocationListener {
+            override fun onLocationChanged(location: Location) {
+                // Do nothing here; we only need the last known location
+            }
+
+            override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {
+                // Do nothing here
+            }
+
+            override fun onProviderEnabled(provider: String) {
+                // Do nothing here
+            }
+
+            override fun onProviderDisabled(provider: String) {
+                // Do nothing here
+            }
+        }
+
+        locationManager.requestSingleUpdate(LocationManager.GPS_PROVIDER, locationListener, null)
+    }
+
+    private fun getCurrentDateTime(): String {
+        val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+        val currentDateTime = Date()
+        return dateFormat.format(currentDateTime)
+    }
+
+    private fun appendToLog(message: String) {
+        val logTextView: TextView = findViewById(R.id.logTextView)
+        logTextView.append("$message")
     }
 
     private fun getMobileNetworkType(networkType: Int): String {
@@ -174,12 +301,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showDangerAlert() {
-        val alertDialog = AlertDialog.Builder(this)
-            .setTitle("Warning!")
-            .setMessage("You are connected to a 2G or 3G network.")
-            .setPositiveButton("OK", null)
-            .create()
-
-        alertDialog.show()
+        // Displaying the warning alert is not necessary since we are appending the message to the log
     }
+
+    private fun hideDangerAlert() {
+        // Hiding the warning alert is not necessary since we are appending the message to the log
+    }
+
 }

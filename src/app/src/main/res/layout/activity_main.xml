@@ -15,14 +15,25 @@
         android:id="@+id/statusTextView"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="32dp"
+        android:textColor="@android:color/white"
+        android:background="@drawable/status_textview_background"
+        android:padding="8dp"
+        android:layout_marginTop="16dp"
+        android:textSize="18sp"
         android:gravity="center"
-        android:textSize="24sp"
-        android:textColor="#FFFFFF"
-        android:textStyle="bold"
-        android:background="@drawable/status_background"
-        android:padding="16dp"
-        android:visibility="visible" />
+        android:text="Not checking network status" />
+
+    <TextView
+        android:id="@+id/logTextView"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textColor="@android:color/black"
+        android:background="@android:color/white"
+        android:padding="8dp"
+        android:layout_marginTop="16dp"
+        android:scrollbars="vertical"
+        android:maxLines="10"
+        android:fadeScrollbars="false" />
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -37,9 +48,9 @@
             android:layout_height="60dp"
             android:text="Start Checking Network Status"
             android:background="@drawable/button_background"
-        android:textColor="#FFFFFF"
-        android:textAllCaps="false"
-        android:textSize="16sp" />
+            android:textColor="#FFFFFF"
+            android:textAllCaps="false"
+            android:textSize="16sp" />
 
         <Button
             android:id="@+id/stopButton"
@@ -47,10 +58,10 @@
             android:layout_height="60dp"
             android:text="Stop Checking Network Status"
             android:background="@drawable/button_background"
-        android:textColor="#FFFFFF"
-        android:textAllCaps="false"
-        android:textSize="16sp"
-        android:layout_marginLeft="16dp" />
+            android:textColor="#FFFFFF"
+            android:textAllCaps="false"
+            android:textSize="16sp"
+            android:layout_marginLeft="16dp" />
 
     </LinearLayout>
 

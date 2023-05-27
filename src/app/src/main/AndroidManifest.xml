@@ -3,7 +3,9 @@
 
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.BATTERY_STATS" />
 
 
     <application
@@ -23,24 +25,10 @@
             </intent-filter>
         </activity>
 
-        <receiver
-            android:name=".MainActivity$BannerBroadcastReceiver"
-            android:exported="true" />
-
         <service
-            android:name=".MyService"
-            android:exported="false" />
-
-        <!-- Add the notification channel -->
-        <provider
-            android:name="androidx.core.content.FileProvider"
-            android:authorities="${applicationId}.fileprovider"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/file_paths" />
-        </provider>
+            android:name=".NetworkMonitoringService"
+            android:foregroundServiceType="location"
+            android:permission="android.permission.FOREGROUND_SERVICE" />
 
     </application>
 

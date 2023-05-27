@@ -2,10 +2,10 @@
 
 Work in Progress
 
-The Network Protocol Downgrade Detector is an Android application developed using Android Studio and Kotlin. Its primary objective is to assist users in identifying instances where their mobile devices shift from secure network protocols to less secure protocols. This change in protocols could potentially indicate the presence of an attack by state actors utilizing stingrays or cell-site simulators.
+The Network Protocol Downgrade Detector is an Android application developed using Android Studio and Kotlin. Its primary objective is to assist users in identifying the presence of an attack by state or non-state actors utilizing stingrays or cell-site simulators. 
 
-## Features
+## Current status
+- App monitors network protocol, location, signal strength, battery status
 
-- Monitors the network protocol status of the user's device.
-- Alerts the user when a downgrade from a more secure protocol (e.g., 4G+) to a less secure protocol (e.g., 3G, 2G) is detected.
-- Provides real-time notifications to keep the user informed about the status of their network connection.
+## What's next
+- Figure out alert logic (for example, should an alert only be raised when the phone's network protocol is downgraded in tandem with an unexpected location change and drop in battery life)
