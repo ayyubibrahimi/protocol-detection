@@ -29,7 +29,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import android.os.BatteryManager
-
+import com.google.android.gms.maps.model.LatLng
 
 class MainActivity : AppCompatActivity() {
 
@@ -45,6 +45,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var dangerAlertView: View
     private lateinit var dangerAlert: AlertDialog
     private lateinit var logTextView: TextView
+    private var lastKnownLocation: Location? = null
 
     private fun initializeNetworkCallback() {
         networkCallback = object : ConnectivityManager.NetworkCallback() {
@@ -193,12 +194,22 @@ class MainActivity : AppCompatActivity() {
                         "Connected to Mobile Data: $mobileNetworkType, Signal Strength: $signalStrength, Battery Status: $batteryStatus"
                     )
 
-                    if (mobileNetworkType == "2G" || mobileNetworkType == "3G") {
+                    if ((mobileNetworkType == "2G" || mobileNetworkType == "3G") &&
+                        (networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                                networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) &&
+                        !networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) &&
+                        !networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+                    ) {
+
                         val currentDateTime = getCurrentDateTime()
                         val location = getLastKnownLocation()
-                        val logMessage =
-                            "$currentDateTime - Warning: Dangerous network detected! Location: $location, Signal Strength: $signalStrength, Battery Status: $batteryStatus"
-                        appendToLog(logMessage)
+                        val distanceFromLastKnownLocation = calculateDistanceFromLastKnownLocation(location)
+
+                        if (distanceFromLastKnownLocation >= 100000) {
+                            val logMessage =
+                                "$currentDateTime - Warning: Network protocol downgraded from 4G/5G to $mobileNetworkType. Location might be under a spoof attack! Distance from last known location: $distanceFromLastKnownLocation meters"
+                            appendToLog(logMessage)
+                        }
                     }
                 }
                 else -> {
@@ -208,6 +219,37 @@ class MainActivity : AppCompatActivity() {
         } else {
             Log.d("Network", "Not Connected")
         }
+    }
+
+
+    private fun calculateDistanceFromLastKnownLocation(currentLocation: Location?): Float {
+        if (lastKnownLocation == null) {
+            lastKnownLocation = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+        }
+
+        val currentLatLng = currentLocation?.let { LatLng(it.latitude, it.longitude) }
+        val lastKnownLatLng = lastKnownLocation?.let { LatLng(it.latitude, it.longitude) }
+
+        if (currentLatLng != null && lastKnownLatLng != null) {
+            val results = FloatArray(1)
+            Location.distanceBetween(
+                lastKnownLatLng.latitude, lastKnownLatLng.longitude,
+                currentLatLng.latitude, currentLatLng.longitude,
+                results
+            )
+            return results[0]
+        }
+        return 0f
+    }
+
+    private fun extractLatLng(locationString: String): LatLng? {
+        val pattern = "Lat: (.*), Long: (.*)".toRegex()
+        val matchResult = pattern.find(locationString)
+        if (matchResult != null) {
+            val (latitude, longitude) = matchResult.destructured
+            return LatLng(latitude.toDouble(), longitude.toDouble())
+        }
+        return null
     }
 
     private fun getBatteryStatus(): String {
@@ -231,21 +273,16 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun getLastKnownLocation(): String {
-        var locationString = "Unknown"
+    private fun getLastKnownLocation(): Location? {
+        var location: Location? = null
         if (ActivityCompat.checkSelfPermission(
                 this,
                 Manifest.permission.ACCESS_FINE_LOCATION
             ) == PackageManager.PERMISSION_GRANTED
         ) {
-            val location = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
-            location?.let {
-                val latitude = location.latitude
-                val longitude = location.longitude
-                locationString = "Lat: $latitude, Long: $longitude"
-            }
+            location = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
         }
-        return locationString
+        return location
     }
 
     private fun initializeLocationListener() {
