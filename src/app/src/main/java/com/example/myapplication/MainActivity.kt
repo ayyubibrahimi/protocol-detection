@@ -2,7 +2,6 @@ package com.example.myapplication
 
 import android.Manifest
 import android.content.Context
-import android.content.DialogInterface
 import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationListener
@@ -22,14 +21,11 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import android.widget.Button
 import android.widget.TextView
-import android.view.LayoutInflater
-import android.view.View
-import android.view.ViewGroup
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import android.os.BatteryManager
 import com.google.android.gms.maps.model.LatLng
+import android.view.View
 
 class MainActivity : AppCompatActivity() {
 
@@ -42,11 +38,10 @@ class MainActivity : AppCompatActivity() {
     private val networkCheckIntervalMs = 10000L
     private var isCheckingNetworkStatus = false
     private lateinit var statusTextView: TextView
-    private lateinit var dangerAlertView: View
-    private lateinit var dangerAlert: AlertDialog
-    private lateinit var logTextView: TextView
     private var lastKnownLocation: Location? = null
+    private var lastKnownNetworkType: String? = null
 
+    // Initialize the network callback for monitoring network availability
     private fun initializeNetworkCallback() {
         networkCallback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
@@ -75,7 +70,7 @@ class MainActivity : AppCompatActivity() {
         telephonyManager = getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
         locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
 
-        // Check and request the READ_PHONE_STATE permission if not granted
+        // Request READ_PHONE_STATE permission if not granted
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
             ContextCompat.checkSelfPermission(
                 this,
@@ -91,7 +86,7 @@ class MainActivity : AppCompatActivity() {
             initializeNetworkCallback()
         }
 
-        // Check and request the ACCESS_FINE_LOCATION permission if not granted
+        // Request ACCESS_FINE_LOCATION permission if not granted
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
             ContextCompat.checkSelfPermission(
                 this,
@@ -110,9 +105,7 @@ class MainActivity : AppCompatActivity() {
         val startButton: Button = findViewById(R.id.startButton)
         val stopButton: Button = findViewById(R.id.stopButton)
         statusTextView = findViewById(R.id.statusTextView)
-        logTextView = findViewById(R.id.logTextView)
 
-        // Set the initial message as "Not Checking Network Status"
         statusTextView.apply {
             text = "Not checking network status"
             setBackgroundColor(ContextCompat.getColor(context, R.color.colorNotCheckingStatus))
@@ -126,22 +119,14 @@ class MainActivity : AppCompatActivity() {
         stopButton.setOnClickListener {
             stopCheckingNetworkStatus()
         }
-
-        // Inflate the custom danger alert layout
-        dangerAlertView = layoutInflater.inflate(R.layout.danger_alert_layout, null)
-        dangerAlert = AlertDialog.Builder(this)
-            .setTitle("Warning!")
-            .setView(dangerAlertView)
-            .setPositiveButton("OK", null)
-            .create()
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        dangerAlert.dismiss() // Dismiss the danger alert dialog when the activity is destroyed
-        locationManager.removeUpdates(locationListener) // Stop receiving location updates
+        locationManager.removeUpdates(locationListener)
     }
 
+    // Start checking the network status
     private fun startCheckingNetworkStatus() {
         if (isCheckingNetworkStatus) {
             return
@@ -151,198 +136,212 @@ class MainActivity : AppCompatActivity() {
         statusTextView.apply {
             text = "Checking network status"
             setBackgroundColor(ContextCompat.getColor(context, R.color.colorCheckingStatus))
-            visibility = View.VISIBLE
         }
-        handler.postDelayed(networkCheckRunnable, networkCheckIntervalMs)
+
+        handler.post(networkCheckRunnable)
     }
 
+    // Stop checking the network status
     private fun stopCheckingNetworkStatus() {
+        if (!isCheckingNetworkStatus) {
+            return
+        }
+
         isCheckingNetworkStatus = false
-        handler.removeCallbacks(networkCheckRunnable)
         statusTextView.apply {
             text = "Not checking network status"
             setBackgroundColor(ContextCompat.getColor(context, R.color.colorNotCheckingStatus))
-            visibility = View.VISIBLE
         }
+
+        handler.removeCallbacks(networkCheckRunnable)
     }
 
+    // Log the current network type
+    private fun logNetworkType() {
+        val networkType = telephonyManager.networkType
+        val currentNetworkType = getMobileNetworkType(networkType)
+
+        lastKnownNetworkType = currentNetworkType
+    }
+
+    // Runnable for network status checks
     private val networkCheckRunnable = object : Runnable {
         override fun run() {
             if (!isCheckingNetworkStatus) {
                 return
             }
 
+            val previousNetworkType = lastKnownNetworkType
+            val previousLocation = lastKnownLocation
+
             logNetworkType()
+            val currentNetworkType = lastKnownNetworkType
+            val currentLocation = getLastKnownLocation()
+
+            val currentDateTime = getCurrentDateTime()
+            var logMessage = ""
+
+            // Check for network protocol downgrade
+            if (previousNetworkType in listOf("4G", "5G") && currentNetworkType in listOf("2G", "3G")) {
+                val distanceFromLastKnownLocation = calculateDistanceFromLastKnownLocation(currentLocation)
+
+                if (distanceFromLastKnownLocation < 10) {  // Threshold changed to 10 meters
+                    logMessage =
+                        "$currentDateTime - Warning: Network protocol downgraded from $previousNetworkType to $currentNetworkType without change in location. Possible network interference detected!"
+                } else {
+                    logMessage =
+                        "$currentDateTime - Warning: Network protocol downgraded from $previousNetworkType to $currentNetworkType with a change in location. Possible mobile device tracking detected!"
+                }
+            }
+
+            if (logMessage.isNotEmpty()) {
+                appendToLog(logMessage)
+            }
+
+            lastKnownLocation = currentLocation
+
             handler.postDelayed(this, networkCheckIntervalMs)
         }
     }
 
-    private fun logNetworkType() {
-        val activeNetwork = connectivityManager.activeNetwork
-        val networkCapabilities = connectivityManager.getNetworkCapabilities(activeNetwork)
-        val isConnected = networkCapabilities != null
-
-        if (isConnected) {
-            when {
-                networkCapabilities?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true -> {
-                    val networkType = telephonyManager.networkType
-                    val mobileNetworkType = getMobileNetworkType(networkType)
-                    val signalStrength = getSignalStrength()
-                    val batteryStatus = getBatteryStatus()
-                    Log.d(
-                        "Network",
-                        "Connected to Mobile Data: $mobileNetworkType, Signal Strength: $signalStrength, Battery Status: $batteryStatus"
-                    )
-
-                    if ((mobileNetworkType == "2G" || mobileNetworkType == "3G") &&
-                        (networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
-                                networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) &&
-                        !networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) &&
-                        !networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
-                    ) {
-
-                        val currentDateTime = getCurrentDateTime()
-                        val location = getLastKnownLocation()
-                        val distanceFromLastKnownLocation = calculateDistanceFromLastKnownLocation(location)
-
-                        if (distanceFromLastKnownLocation >= 100000) {
-                            val logMessage =
-                                "$currentDateTime - Warning: Network protocol downgraded from 4G/5G to $mobileNetworkType. Location might be under a spoof attack! Distance from last known location: $distanceFromLastKnownLocation meters"
-                            appendToLog(logMessage)
-                        }
-                    }
-                }
-                else -> {
-                    Log.d("Network", "Connected to Other Network")
-                }
-            }
-        } else {
-            Log.d("Network", "Not Connected")
-        }
-    }
-
-
-    private fun calculateDistanceFromLastKnownLocation(currentLocation: Location?): Float {
-        if (lastKnownLocation == null) {
-            lastKnownLocation = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
-        }
-
-        val currentLatLng = currentLocation?.let { LatLng(it.latitude, it.longitude) }
-        val lastKnownLatLng = lastKnownLocation?.let { LatLng(it.latitude, it.longitude) }
-
-        if (currentLatLng != null && lastKnownLatLng != null) {
-            val results = FloatArray(1)
-            Location.distanceBetween(
-                lastKnownLatLng.latitude, lastKnownLatLng.longitude,
-                currentLatLng.latitude, currentLatLng.longitude,
-                results
-            )
-            return results[0]
-        }
-        return 0f
-    }
-
-    private fun extractLatLng(locationString: String): LatLng? {
-        val pattern = "Lat: (.*), Long: (.*)".toRegex()
-        val matchResult = pattern.find(locationString)
-        if (matchResult != null) {
-            val (latitude, longitude) = matchResult.destructured
-            return LatLng(latitude.toDouble(), longitude.toDouble())
-        }
-        return null
-    }
-
-    private fun getBatteryStatus(): String {
-        val batteryStatus = getSystemService(Context.BATTERY_SERVICE) as BatteryManager
-        val batteryPercentage = batteryStatus.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
-        return "$batteryPercentage%"
-    }
-
-    private fun getSignalStrength(): String {
-        val signalStrength = telephonyManager.signalStrength
-        return if (signalStrength != null) {
-            when (signalStrength.level) {
-                0 -> "None"
-                1 -> "Poor"
-                2 -> "Moderate"
-                3 -> "Good"
-                else -> "Excellent"
-            }
-        } else {
-            "Unknown"
-        }
-    }
-
-    private fun getLastKnownLocation(): Location? {
-        var location: Location? = null
-        if (ActivityCompat.checkSelfPermission(
-                this,
-                Manifest.permission.ACCESS_FINE_LOCATION
-            ) == PackageManager.PERMISSION_GRANTED
-        ) {
-            location = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
-        }
-        return location
-    }
-
-    private fun initializeLocationListener() {
-        locationListener = object : LocationListener {
-            override fun onLocationChanged(location: Location) {
-                // Do nothing here; we only need the last known location
-            }
-
-            override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {
-                // Do nothing here
-            }
-
-            override fun onProviderEnabled(provider: String) {
-                // Do nothing here
-            }
-
-            override fun onProviderDisabled(provider: String) {
-                // Do nothing here
-            }
-        }
-
-        locationManager.requestSingleUpdate(LocationManager.GPS_PROVIDER, locationListener, null)
-    }
-
-    private fun getCurrentDateTime(): String {
-        val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
-        val currentDateTime = Date()
-        return dateFormat.format(currentDateTime)
-    }
-
-    private fun appendToLog(message: String) {
-        val logTextView: TextView = findViewById(R.id.logTextView)
-        logTextView.append("$message")
-    }
-
+    // Get the mobile network type based on network type constant
     private fun getMobileNetworkType(networkType: Int): String {
         return when (networkType) {
-            TelephonyManager.NETWORK_TYPE_GPRS, TelephonyManager.NETWORK_TYPE_EDGE,
-            TelephonyManager.NETWORK_TYPE_CDMA, TelephonyManager.NETWORK_TYPE_1xRTT,
+            TelephonyManager.NETWORK_TYPE_GSM -> "2G"
+            TelephonyManager.NETWORK_TYPE_GPRS -> "2G"
+            TelephonyManager.NETWORK_TYPE_CDMA -> "2G"
+            TelephonyManager.NETWORK_TYPE_EDGE -> "2G"
+            TelephonyManager.NETWORK_TYPE_1xRTT -> "2G"
             TelephonyManager.NETWORK_TYPE_IDEN -> "2G"
-
-            TelephonyManager.NETWORK_TYPE_UMTS, TelephonyManager.NETWORK_TYPE_EVDO_0,
-            TelephonyManager.NETWORK_TYPE_EVDO_A, TelephonyManager.NETWORK_TYPE_HSDPA,
-            TelephonyManager.NETWORK_TYPE_HSUPA, TelephonyManager.NETWORK_TYPE_HSPA,
-            TelephonyManager.NETWORK_TYPE_EVDO_B, TelephonyManager.NETWORK_TYPE_EHRPD,
-            TelephonyManager.NETWORK_TYPE_HSPAP, TelephonyManager.NETWORK_TYPE_TD_SCDMA -> "3G"
-
-            TelephonyManager.NETWORK_TYPE_LTE, TelephonyManager.NETWORK_TYPE_IWLAN,
-            TelephonyManager.NETWORK_TYPE_NR -> "4G/5G"
-
+            TelephonyManager.NETWORK_TYPE_UMTS -> "3G"
+            TelephonyManager.NETWORK_TYPE_EVDO_0 -> "3G"
+            TelephonyManager.NETWORK_TYPE_EVDO_A -> "3G"
+            TelephonyManager.NETWORK_TYPE_HSDPA -> "3G"
+            TelephonyManager.NETWORK_TYPE_HSUPA -> "3G"
+            TelephonyManager.NETWORK_TYPE_HSPA -> "3G"
+            TelephonyManager.NETWORK_TYPE_EVDO_B -> "3G"
+            TelephonyManager.NETWORK_TYPE_EHRPD -> "3G"
+            TelephonyManager.NETWORK_TYPE_HSPAP -> "3G"
+            TelephonyManager.NETWORK_TYPE_LTE -> "4G"
+            TelephonyManager.NETWORK_TYPE_NR -> "5G"
             else -> "Unknown"
         }
     }
 
-    private fun showDangerAlert() {
-        // Displaying the warning alert is not necessary since we are appending the message to the log
+    // Get the current date and time in a specific format
+    private fun getCurrentDateTime(): String {
+        val currentDateTime = SimpleDateFormat("dd-MM-yyyy HH:mm:ss", Locale.US).format(Date())
+        return currentDateTime
     }
 
-    private fun hideDangerAlert() {
-        // Hiding the warning alert is not necessary since we are appending the message to the log
+    // Append a log message to the status text view and logcat
+    private fun appendToLog(logMessage: String) {
+        Log.d("MainActivity", logMessage)
+        runOnUiThread {
+            statusTextView.append("\n$logMessage")
+        }
     }
 
+    // Get the last known location from the location manager
+    private fun getLastKnownLocation(): Location? {
+        return if (ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            null
+        } else {
+            locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+        }
+    }
+
+    // Calculate the distance between the previous and current locations
+    private fun calculateDistanceFromLastKnownLocation(currentLocation: Location?): Float {
+        return if (lastKnownLocation != null && currentLocation != null) {
+            val previousLatLng = LatLng(lastKnownLocation!!.latitude, lastKnownLocation!!.longitude)
+            val currentLatLng = LatLng(currentLocation.latitude, currentLocation.longitude)
+            val results = FloatArray(1)
+            Location.distanceBetween(
+                previousLatLng.latitude,
+                previousLatLng.longitude,
+                currentLatLng.latitude,
+                currentLatLng.longitude,
+                results
+            )
+            results[0]
+        } else {
+            Float.MAX_VALUE
+        }
+    }
+
+    // Initialize the location listener for monitoring location changes
+    private fun initializeLocationListener() {
+        locationListener = object : LocationListener {
+            override fun onLocationChanged(location: Location) {
+                val currentDistance = calculateDistanceFromLastKnownLocation(location)
+
+                if (currentDistance > 30) {
+                    lastKnownLocation = location
+
+                    val currentNetworkType = lastKnownNetworkType
+                    val currentDateTime = getCurrentDateTime()
+
+                    // Check for significant location change without network protocol downgrade
+                    if (currentNetworkType in listOf("3G", "2G")) {
+                        val logMessage =
+                            "$currentDateTime - Warning: Network protocol downgraded from 5G/4G to $currentNetworkType with a change in location. Possible mobile device tracking detected!"
+                        appendToLog(logMessage)
+                    }
+                }
+            }
+        }
+
+        if (ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+
+        locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0L, 0f, locationListener)
+    }
+
+    // Handle the result of permission requests
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        when (requestCode) {
+            PERMISSION_REQUEST_READ_PHONE_STATE -> {
+                if ((grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED)) {
+                    initializeNetworkCallback()
+                } else {
+                    AlertDialog.Builder(this)
+                        .setMessage("The app needs the READ_PHONE_STATE permission to function properly. Please grant it in your device settings.")
+                        .setPositiveButton("OK") { _, _ -> }
+                        .create()
+                        .show()
+                }
+            }
+            PERMISSION_REQUEST_LOCATION -> {
+                if ((grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED)) {
+                    initializeLocationListener()
+                } else {
+                    AlertDialog.Builder(this)
+                        .setMessage("The app needs the ACCESS_FINE_LOCATION permission to function properly. Please grant it in your device settings.")
+                        .setPositiveButton("OK") { _, _ -> }
+                        .create()
+                        .show()
+                }
+            }
+        }
+    }
 }
