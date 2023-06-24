@@ -9,11 +9,9 @@ The Network Protocol Downgrade Detector is an Android application developed usin
 
 - Detect network protocol downgrade: If the network protocol is downgraded from 4G/5G to 2G/3G without a change in location, a warning message is logged indicating possible network interference.
 
-- Detect significant location change: If the network protocol is downgraded from 4G/5G to 2G/3G with a change in location, a warning message is logged indicating possible mobile device tracking.
-
 - Logging: The application logs network status changes and warnings to provide visibility into network and location-related events.
 
-- Permissions handling: The application requests necessary permissions (READ_PHONE_STATE and ACCESS_FINE_LOCATION) to function properly and provides appropriate instructions to users if the permissions are not granted.
+- Permissions handling: The application requests necessary permissions (READ_PHONE_STATE) to function properly and provides appropriate instructions to users if the permissions are not granted.
 
 ## Installation
 - Clone or download the repository.
@@ -30,7 +28,4 @@ The Network Protocol Downgrade Detector is an Android application developed usin
 - To stop checking the network status, click the "Stop" button.
 - The status text view will update to display "Not checking network status" and revert the background color.
 - The application will stop monitoring the network status.
-
-## What's next
-- Figure out alert logic (for example, should an alert only be raised when the phone's network protocol is downgraded in tandem with an unexpected location change and drop in battery life)
 

@@ -40,6 +40,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusTextView: TextView
     private var lastKnownLocation: Location? = null
     private var lastKnownNetworkType: String? = null
+    private lateinit var networkProtocolTextView: TextView
+
 
     // Initialize the network callback for monitoring network availability
     private fun initializeNetworkCallback() {
@@ -69,6 +71,8 @@ class MainActivity : AppCompatActivity() {
         connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         telephonyManager = getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
         locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        networkProtocolTextView = findViewById(R.id.networkProtocolTextView)
+        networkProtocolTextView.visibility = View.VISIBLE
 
         // Request READ_PHONE_STATE permission if not granted
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
@@ -160,8 +164,8 @@ class MainActivity : AppCompatActivity() {
     private fun logNetworkType() {
         val networkType = telephonyManager.networkType
         val currentNetworkType = getMobileNetworkType(networkType)
-
         lastKnownNetworkType = currentNetworkType
+        networkProtocolTextView.text = "Current Network Protocol: $currentNetworkType"
     }
 
     // Runnable for network status checks
@@ -172,33 +176,22 @@ class MainActivity : AppCompatActivity() {
             }
 
             val previousNetworkType = lastKnownNetworkType
-            val previousLocation = lastKnownLocation
 
             logNetworkType()
             val currentNetworkType = lastKnownNetworkType
-            val currentLocation = getLastKnownLocation()
 
             val currentDateTime = getCurrentDateTime()
             var logMessage = ""
 
             // Check for network protocol downgrade
             if (previousNetworkType in listOf("4G", "5G") && currentNetworkType in listOf("2G", "3G")) {
-                val distanceFromLastKnownLocation = calculateDistanceFromLastKnownLocation(currentLocation)
-
-                if (distanceFromLastKnownLocation < 10) {  // Threshold changed to 10 meters
-                    logMessage =
-                        "$currentDateTime - Warning: Network protocol downgraded from $previousNetworkType to $currentNetworkType without change in location. Possible network interference detected!"
-                } else {
-                    logMessage =
-                        "$currentDateTime - Warning: Network protocol downgraded from $previousNetworkType to $currentNetworkType with a change in location. Possible mobile device tracking detected!"
-                }
+                logMessage =
+                    "$currentDateTime - Warning: Network protocol downgraded from $previousNetworkType to $currentNetworkType. Possible network interference detected!"
             }
 
             if (logMessage.isNotEmpty()) {
                 appendToLog(logMessage)
             }
-
-            lastKnownLocation = currentLocation
 
             handler.postDelayed(this, networkCheckIntervalMs)
         }
