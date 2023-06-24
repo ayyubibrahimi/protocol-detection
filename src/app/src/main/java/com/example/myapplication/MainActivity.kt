@@ -3,9 +3,6 @@ package com.example.myapplication
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
-import android.location.Location
-import android.location.LocationListener
-import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -26,19 +23,19 @@ import java.util.Date
 import java.util.Locale
 import com.google.android.gms.maps.model.LatLng
 import android.view.View
+import android.provider.Settings
+import android.content.Intent
+
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var connectivityManager: ConnectivityManager
     private lateinit var networkCallback: ConnectivityManager.NetworkCallback
     private lateinit var telephonyManager: TelephonyManager
-    private lateinit var locationManager: LocationManager
-    private lateinit var locationListener: LocationListener
     private val handler = Handler()
     private val networkCheckIntervalMs = 10000L
     private var isCheckingNetworkStatus = false
     private lateinit var statusTextView: TextView
-    private var lastKnownLocation: Location? = null
     private var lastKnownNetworkType: String? = null
     private lateinit var networkProtocolTextView: TextView
 
@@ -70,7 +67,6 @@ class MainActivity : AppCompatActivity() {
 
         connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         telephonyManager = getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
-        locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
         networkProtocolTextView = findViewById(R.id.networkProtocolTextView)
         networkProtocolTextView.visibility = View.VISIBLE
 
@@ -90,21 +86,6 @@ class MainActivity : AppCompatActivity() {
             initializeNetworkCallback()
         }
 
-        // Request ACCESS_FINE_LOCATION permission if not granted
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
-            ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.ACCESS_FINE_LOCATION
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            ActivityCompat.requestPermissions(
-                this,
-                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
-                PERMISSION_REQUEST_LOCATION
-            )
-        } else {
-            initializeLocationListener()
-        }
 
         val startButton: Button = findViewById(R.id.startButton)
         val stopButton: Button = findViewById(R.id.stopButton)
@@ -123,11 +104,16 @@ class MainActivity : AppCompatActivity() {
         stopButton.setOnClickListener {
             stopCheckingNetworkStatus()
         }
+
+        // Initialize and setup your network button here
+        val networkButton: Button = findViewById(R.id.networkButton)
+        networkButton.setOnClickListener {
+            startActivity(Intent(Settings.ACTION_NETWORK_OPERATOR_SETTINGS))
+        }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        locationManager.removeUpdates(locationListener)
     }
 
     // Start checking the network status
@@ -235,76 +221,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Get the last known location from the location manager
-    private fun getLastKnownLocation(): Location? {
-        return if (ActivityCompat.checkSelfPermission(
-                this,
-                Manifest.permission.ACCESS_FINE_LOCATION
-            ) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(
-                this,
-                Manifest.permission.ACCESS_COARSE_LOCATION
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            null
-        } else {
-            locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
-        }
-    }
-
-    // Calculate the distance between the previous and current locations
-    private fun calculateDistanceFromLastKnownLocation(currentLocation: Location?): Float {
-        return if (lastKnownLocation != null && currentLocation != null) {
-            val previousLatLng = LatLng(lastKnownLocation!!.latitude, lastKnownLocation!!.longitude)
-            val currentLatLng = LatLng(currentLocation.latitude, currentLocation.longitude)
-            val results = FloatArray(1)
-            Location.distanceBetween(
-                previousLatLng.latitude,
-                previousLatLng.longitude,
-                currentLatLng.latitude,
-                currentLatLng.longitude,
-                results
-            )
-            results[0]
-        } else {
-            Float.MAX_VALUE
-        }
-    }
-
-    // Initialize the location listener for monitoring location changes
-    private fun initializeLocationListener() {
-        locationListener = object : LocationListener {
-            override fun onLocationChanged(location: Location) {
-                val currentDistance = calculateDistanceFromLastKnownLocation(location)
-
-                if (currentDistance > 30) {
-                    lastKnownLocation = location
-
-                    val currentNetworkType = lastKnownNetworkType
-                    val currentDateTime = getCurrentDateTime()
-
-                    // Check for significant location change without network protocol downgrade
-                    if (currentNetworkType in listOf("3G", "2G")) {
-                        val logMessage =
-                            "$currentDateTime - Warning: Network protocol downgraded from 5G/4G to $currentNetworkType with a change in location. Possible mobile device tracking detected!"
-                        appendToLog(logMessage)
-                    }
-                }
-            }
-        }
-
-        if (ActivityCompat.checkSelfPermission(
-                this,
-                Manifest.permission.ACCESS_FINE_LOCATION
-            ) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(
-                this,
-                Manifest.permission.ACCESS_COARSE_LOCATION
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            return
-        }
-
-        locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0L, 0f, locationListener)
-    }
 
     // Handle the result of permission requests
     override fun onRequestPermissionsResult(
@@ -324,17 +240,6 @@ class MainActivity : AppCompatActivity() {
                         .show()
                 }
             }
-            PERMISSION_REQUEST_LOCATION -> {
-                if ((grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED)) {
-                    initializeLocationListener()
-                } else {
-                    AlertDialog.Builder(this)
-                        .setMessage("The app needs the ACCESS_FINE_LOCATION permission to function properly. Please grant it in your device settings.")
-                        .setPositiveButton("OK") { _, _ -> }
-                        .create()
-                        .show()
                 }
             }
         }
-    }
-}
