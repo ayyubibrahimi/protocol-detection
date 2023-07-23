@@ -23,12 +23,13 @@ import java.util.Date
 import java.util.Locale
 import com.google.android.gms.maps.model.LatLng
 import android.view.View
-import android.provider.Settings
 import android.content.Intent
+import android.media.MediaPlayer
+import android.provider.Settings
+import android.media.RingtoneManager
 
 
 class MainActivity : AppCompatActivity() {
-
     private lateinit var connectivityManager: ConnectivityManager
     private lateinit var networkCallback: ConnectivityManager.NetworkCallback
     private lateinit var telephonyManager: TelephonyManager
@@ -38,7 +39,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusTextView: TextView
     private var lastKnownNetworkType: String? = null
     private lateinit var networkProtocolTextView: TextView
-
 
     // Initialize the network callback for monitoring network availability
     private fun initializeNetworkCallback() {
@@ -86,7 +86,6 @@ class MainActivity : AppCompatActivity() {
             initializeNetworkCallback()
         }
 
-
         val startButton: Button = findViewById(R.id.startButton)
         val stopButton: Button = findViewById(R.id.stopButton)
         statusTextView = findViewById(R.id.statusTextView)
@@ -110,6 +109,9 @@ class MainActivity : AppCompatActivity() {
         networkButton.setOnClickListener {
             startActivity(Intent(Settings.ACTION_NETWORK_OPERATOR_SETTINGS))
         }
+
+        // Start network checking right after the app opens
+        startCheckingNetworkStatus()
     }
 
     override fun onDestroy() {
@@ -154,6 +156,9 @@ class MainActivity : AppCompatActivity() {
         networkProtocolTextView.text = "Current Network Protocol: $currentNetworkType"
     }
 
+    private var isNetworkDowngraded = false
+    private var mediaPlayer: MediaPlayer? = null
+
     // Runnable for network status checks
     private val networkCheckRunnable = object : Runnable {
         override fun run() {
@@ -169,10 +174,12 @@ class MainActivity : AppCompatActivity() {
             val currentDateTime = getCurrentDateTime()
             var logMessage = ""
 
-            // Check for network protocol downgrade
-            if (previousNetworkType in listOf("4G", "5G") && currentNetworkType in listOf("2G", "3G")) {
+            // Generate alert if network is 2G or 3G
+            if (currentNetworkType in listOf("2G", "3G")) {
                 logMessage =
-                    "$currentDateTime - Warning: Network protocol downgraded from $previousNetworkType to $currentNetworkType. Possible network interference detected!"
+                    "$currentDateTime - Warning: Current network protocol is $currentNetworkType. Possible network interference detected!"
+
+                playNotificationSound()
             }
 
             if (logMessage.isNotEmpty()) {
@@ -180,6 +187,16 @@ class MainActivity : AppCompatActivity() {
             }
 
             handler.postDelayed(this, networkCheckIntervalMs)
+        }
+    }
+
+    private fun playNotificationSound() {
+        try {
+            val alertSound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+            val mediaPlayer = MediaPlayer.create(applicationContext, alertSound)
+            mediaPlayer.start()
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 
@@ -221,8 +238,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-
-    // Handle the result of permission requests
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<out String>,
@@ -233,13 +248,21 @@ class MainActivity : AppCompatActivity() {
                 if ((grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED)) {
                     initializeNetworkCallback()
                 } else {
-                    AlertDialog.Builder(this)
-                        .setMessage("The app needs the READ_PHONE_STATE permission to function properly. Please grant it in your device settings.")
-                        .setPositiveButton("OK") { _, _ -> }
+                    val alertDialog = AlertDialog.Builder(this)
+                        .setTitle("Permission needed")
+                        .setMessage("This app needs the READ_PHONE_STATE permission to monitor network status.")
+                        .setPositiveButton("OK") { _, _ ->
+                            ActivityCompat.requestPermissions(
+                                this,
+                                arrayOf(Manifest.permission.READ_PHONE_STATE),
+                                PERMISSION_REQUEST_READ_PHONE_STATE
+                            )
+                        }
                         .create()
-                        .show()
+                    alertDialog.show()
                 }
-            }
-                }
+                return
             }
         }
+    }
+}
